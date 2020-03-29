@@ -1,5 +1,5 @@
 // name: Will Storey and Brandon Henry
-// netid: wms176 and
+// netid: wms176 and bdh354
 // assignment: PA2
 
 #include <netinet/in.h>
@@ -14,54 +14,67 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
+
 using namespace std;
 
 #define WINDOW_SIZE 7
 #define SEQUENCENUM 8
 
-
 int main (int argc, char *argv[]){
 
+	// initialize variables
 	int numSent = 0;
 	int numReceived = 0;
-	int sending, receiving;
 	int base = 0;
-	int nextSequenceNum;
-	int loop1 = 0;
+	int init = 0;
 	int myinitial = 0;
+
+	int sending, receiving;
+	int nextSequenceNum;
 
 	char fileBuffer[1024][31];
 	char sendData[37];
-  char receiveData[12];
+    char receiveData[12];
 	char receiverBuffer[1024];
 	char chunkBuffer[30];
 
 	struct sockaddr_in emulatorSent, emulatorReceived;
 	struct hostent *sendAddress = gethostbyname(argv[1]);
-  struct hostent *receiveAddress = gethostbyname("localhost");
+    struct hostent *receiveAddress = gethostbyname("localhost");
 	struct timeval timeout;
 
-	socklen_t size1, size2;
+	socklen_t sentLength, receivedLength;
+
+	// setup timeout
 	timeout.tv_sec = 0;
 	timeout.tv_usec = 2000000;
 
+	// create packet to store received data
 	packet *packetReceived = new packet(-1, -1, -1, receiveData);
 
+	// create send and receive sockets
 	sending = socket(AF_INET, SOCK_DGRAM, 0);
 	receiving = socket(AF_INET, SOCK_DGRAM, 0);
 
+	// setup sent socket address
 	emulatorSent.sin_family = AF_INET;
-  emulatorSent.sin_port = htons(atoi(argv[2]));
+    emulatorSent.sin_port = htons(atoi(argv[2]));
+
 	memcpy(&emulatorSent.sin_addr, sendAddress->h_addr_list[0], sendAddress->h_length);
 
+	// setup received socket address
 	emulatorReceived.sin_family = AF_INET;
-  emulatorReceived.sin_port = htons(atoi(argv[3]));
+    emulatorReceived.sin_port = htons(atoi(argv[3]));
+
 	memcpy(&emulatorReceived.sin_addr, receiveAddress->h_addr_list[0], receiveAddress->h_length);
+
+	// bind each piece for receiving
 	bind(receiving,(struct sockaddr *) &emulatorReceived, sizeof(emulatorReceived));
 	setsockopt(receiving, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-  size1 = sizeof(emulatorSent);
-	size2 = sizeof(emulatorReceived);
+	// obtain length of sent and receive addresses
+	sentLength = sizeof(emulatorSent);
+	receivedLength = sizeof(emulatorReceived);
 
 	ifstream in_file(argv[4], ifstream::binary);
 	ofstream seqnum_file("seqnum.log"), ack_file("ack.log");
@@ -77,7 +90,7 @@ int main (int argc, char *argv[]){
 			       packet *packetSent = new packet(1, nextSequenceNum, strlen(fileBuffer[numSent]), fileBuffer[numSent]);
 			       packetSent->serialize(sendData);
 			       delete packetSent;
-			       sendto(sending, sendData, strlen(sendData), 0, (struct sockaddr *) &emulatorSent, size1);
+			       sendto(sending, sendData, strlen(sendData), 0, (struct sockaddr *) &emulatorSent, sentLength);
 			       printf("type: %d %s\n", nextSequenceNum, sendData);
 			       seqnum_file << nextSequenceNum << endl;
 			       numSent += 1;
@@ -87,19 +100,17 @@ int main (int argc, char *argv[]){
 		    bzero(receiverBuffer, sizeof(receiverBuffer));
 		    bzero(receiveData, sizeof(receiveData));
 
-		    if ((recvfrom(receiving, receiverBuffer, sizeof(receiverBuffer), 0, (struct sockaddr *) &emulatorReceived, &size2) == -1) && (errno == 11)){
+		    if ((recvfrom(receiving, receiverBuffer, sizeof(receiverBuffer), 0, (struct sockaddr *) &emulatorReceived, &receivedLength) == -1) && (errno == 11)){
             int bottom = base - 1;
-
 			      for (int n = bottom; n <numSent; ++n){
-
-				         if(loop1 == myinitial){
+				         if(init == myinitial){
 				               nextSequenceNum = n % SEQUENCENUM;
 				               bzero(sendData, sizeof(sendData));
 				               packet *packetSent = new packet(1, nextSequenceNum, strlen(fileBuffer[n]), fileBuffer[n]);
 				               packetSent->serialize(sendData);
 				               delete packetSent;
 				               printf("Resent packet %d: %s\n", nextSequenceNum, sendData);
-				               sendto(sending, sendData, strlen(sendData), 0, (struct sockaddr *) &emulatorSent, size1);
+				               sendto(sending, sendData, strlen(sendData), 0, (struct sockaddr *) &emulatorSent, sentLength);
 				               seqnum_file << nextSequenceNum << endl;
 				         }
 			       }
@@ -122,12 +133,12 @@ int main (int argc, char *argv[]){
 			packet *packetSent = new packet(3, nextSequenceNum, 0, NULL);
 			packetSent->serialize(sendData);
 			delete packetSent;
-			sendto(sending, sendData, strlen(sendData), 0, (struct sockaddr *) &emulatorSent, size1);
+			sendto(sending, sendData, strlen(sendData), 0, (struct sockaddr *) &emulatorSent, sentLength);
 			cout << "Sending EOT packet to server." << endl;
 			seqnum_file << nextSequenceNum << endl;
 
 			bzero(receiverBuffer, sizeof(receiverBuffer));
-			recvfrom(receiving, receiverBuffer, sizeof(receiverBuffer), 0, (struct sockaddr *) &emulatorReceived, &size2);
+			recvfrom(receiving, receiverBuffer, sizeof(receiverBuffer), 0, (struct sockaddr *) &emulatorReceived, &receivedLength);
 			packetReceived->deserialize(receiverBuffer);
 			if (packetReceived->getType() == 2){
 				cout << "EOT packet received. Exiting.-----------------------------------" << endl;
@@ -136,14 +147,14 @@ int main (int argc, char *argv[]){
 			}
 
 		}
-
+		
 	}
 
-  close(sending);
+    close(sending);
 	close(receiving);
 
 	seqnum_file.close();
 	ack_file.close();
 	delete packetReceived;
-  return 0;
+    return 0;
 }
